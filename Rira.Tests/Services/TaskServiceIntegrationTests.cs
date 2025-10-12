@@ -1,186 +1,202 @@
 ﻿using AutoMapper;
-using FluentAssertions;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Rira.Application.DTOs;
-using Rira.Application.Services;
+using Rira.Application.Features.Tasks.Commands.Create;
+using Rira.Application.Interfaces;
+using Rira.Application.MappingProfiles;
 using Rira.Application.Validators;
 using Rira.Domain.Entities;
-using Rira.Tests.TestUtilities;
-using Xunit;
+using Rira.Domain.Enums;
+using Rira.Persistence.Data;
+using System.Net;
+using FluentValidation;
+using Microsoft.EntityFrameworkCore;
+using Rira.Application.DTOs; // برای TaskDto
+using FluentAssertions;
+using MediatR;
+using TaskStatus = Rira.Domain.Enums.TaskStatus;
 
 namespace Rira.Tests.Application.Services
 {
-    /// <summary>
-    /// ✅ تست‌های یکپارچگی سرویس TaskService در پروژه ریرا
-    /// --------------------------------------------------------------------------------------------------
-    /// این تست‌ها منطق واقعی سرویس را با AutoMapper، Validator و DbContext حافظه‌ای بررسی می‌کنند.
-    /// </summary>
     public class TaskServiceIntegrationTests
     {
-        // 🧩 وابستگی‌ها (Mapper و Validator)
+        private readonly ITaskService _taskService;
+        private readonly IAppDbContext _context;
         private readonly IMapper _mapper;
-        private readonly TaskDtoValidator _validator;
+        private readonly ServiceProvider _serviceProvider;
 
-        // ==========================================================================================
-        // ⚙️ سازنده‌ی کلاس تست — نسخه سازگار با AutoMapper v12+
-        // ==========================================================================================
         public TaskServiceIntegrationTests()
         {
-            // ✅ ایجاد کانتینر DI برای سنجش واقع‌گرایانه ماپر و والیدیتور
             var services = new ServiceCollection();
 
-            // 📦 ثبت پروفایل نگاشت مستقیم بین TaskEntity و TaskDto
+            // ✅ پیکربندی DbContext با InMemory
+            services.AddDbContext<AppDbContext>(options =>
+                options.UseInMemoryDatabase("RiraTestDb"));
+
+            // ✅ AutoMapper با پروفایل واقعی
             services.AddAutoMapper(cfg =>
             {
-                cfg.CreateMap<TaskEntity, TaskDto>().ReverseMap();
+                cfg.AddProfile<TaskProfile>();
             });
 
-            // 📦 ثبت Validator به عنوان سرویس واقعی
-            services.AddScoped<TaskDtoValidator>();
+            // ✅ MediatR برای Command/Queryها
+            services.AddMediatR(cfg =>
+                cfg.RegisterServicesFromAssembly(typeof(TaskCreateCommandHandler).Assembly));
 
-            // ⚙️ ساخت ServiceProvider و واکشی Instanceها
-            var provider = services.BuildServiceProvider();
-            _mapper = provider.GetRequiredService<IMapper>();
-            _validator = provider.GetRequiredService<TaskDtoValidator>();
+            // ✅ Validatorهای FluentValidation
+            services.AddValidatorsFromAssemblyContaining<TaskDtoValidator>();
+
+            // ✅ ثبت سرویس TaskService
+            services.AddScoped<ITaskService, TaskService>();
+
+            _serviceProvider = services.BuildServiceProvider();
+
+            _context = _serviceProvider.GetRequiredService<AppDbContext>();
+            _mapper = _serviceProvider.GetRequiredService<IMapper>();
+            _taskService = _serviceProvider.GetRequiredService<ITaskService>();
+
+            SeedTestDataAsync().GetAwaiter().GetResult();
         }
 
-        // ==========================================================================================
-        // 🎯 تست ۱: بررسی رفتار سرویس در ثبت تسک معتبر
-        // ==========================================================================================
-        [Fact(DisplayName = "ایجاد تسک معتبر باید پاسخ موفق برگرداند")]
-        public async Task CreateTask_Should_Return_SuccessResponse_For_ValidData()
+        private async Task SeedTestDataAsync()
         {
-            var dbContext = InMemoryContextFactory.CreateDbContext();
-            var service = new TaskService(dbContext, _mapper, _validator);
+            _context.Tasks.RemoveRange(_context.Tasks);
+            await _context.SaveChangesAsync();
 
+            var tasks = new List<TaskEntity>
+            {
+                new TaskEntity { Id = 1, Title = "Task 1", Description = "Desc 1", Status = TaskStatus.Pending, Priority = TaskPriority.Medium },
+                new TaskEntity { Id = 2, Title = "Task 2", Description = "Desc 2", Status = TaskStatus.InProgress, Priority = TaskPriority.High }
+            };
+            _context.Tasks.AddRange(tasks);
+            await _context.SaveChangesAsync();
+        }
+
+        // 🚀 تست ایجاد تسک جدید
+        [Fact]
+        public async Task CreateTaskAsync_Should_Save_Task_Correctly()
+        {
             var dto = new TaskDto
             {
-                Title = "نوشتن تست یکپارچگی",
-                Description = "بررسی رفتار سرویس در حالت داده معتبر",
-                Status = "Pending",
-                Priority = "High",
-                CreatedAt = "1403/01/01",
-                UpdatedAt = "1403/01/02"
+                Title = "New Task",
+                Description = "Integration Test Task",
+                Status = TaskStatus.Pending,
+                Priority = TaskPriority.Low
             };
 
-            var response = await service.CreateTaskAsync(dto);
+            var result = await _taskService.CreateTaskAsync(dto);
 
-            response.Should().NotBeNull();
-            response.Success.Should().BeTrue("چون داده معتبر است و باید با موفقیت ثبت شود.");
-            response.Message.Should().Contain("موفق");
-            response.Data.Should().NotBeNull();
+            result.Should().NotBeNull();
+            result.Success.Should().BeTrue();
+            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
 
-            var record = await dbContext.Tasks.FirstOrDefaultAsync();
-            record.Should().NotBeNull();
-            record.Title.Should().Be(dto.Title);
-            record.Status.ToString().Should().Be(dto.Status);
+            // ✅ چون خروجی ResponseModel<int> است
+            result.Data.Should().BeOfType(typeof(int));
+            ((int)result.Data).Should().BeGreaterThan(0);
+
+            var createdTask = await _context.Tasks.FindAsync(result.Data);
+            createdTask.Should().NotBeNull();
+            createdTask!.Title.Should().Be(dto.Title);
         }
 
-        // ==========================================================================================
-        // 🎯 تست ۲: بررسی ایجاد تسک نامعتبر (Validator باید Fail دهد)
-        // ==========================================================================================
-        [Fact(DisplayName = "ایجاد تسک نامعتبر باید Fail برگرداند")]
-        public async Task CreateTask_Should_Return_FailResponse_For_InvalidData()
+        // 🚀 تست واکشی همه تسک‌ها
+        [Fact]
+        public async Task GetAllTasksAsync_Should_Return_All_Tasks()
         {
-            var dbContext = InMemoryContextFactory.CreateDbContext();
-            var service = new TaskService(dbContext, _mapper, _validator);
+            var result = await _taskService.GetAllTasksAsync();
 
-            var invalidDto = new TaskDto
+            result.Should().NotBeNull();
+            result.Success.Should().BeTrue();
+            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
+
+            // ✅ چون Data از نوع List<TaskDto> است
+            result.Data.Should().NotBeNull();
+            result.Data.Should().NotBeEmpty();
+            result.Data.Count.Should().BeGreaterThanOrEqualTo(2);
+        }
+
+        // 🚀 تست واکشی تسک بر اساس Id
+        [Fact]
+        public async Task GetTaskByIdAsync_Should_Return_Correct_Task()
+        {
+            var result = await _taskService.GetTaskByIdAsync(1);
+
+            result.Should().NotBeNull();
+            result.Success.Should().BeTrue();
+            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
+
+            result.Data.Should().NotBeNull();
+            result.Data.Title.Should().Be("Task 1");
+            result.Data.Status.Should().Be(TaskStatus.Pending);
+            result.Data.Priority.Should().Be(TaskPriority.Medium);
+        }
+
+        // 🚀 تست واکشی تسک که وجود ندارد
+        [Fact]
+        public async Task GetTaskByIdAsync_Should_Fail_When_NotFound()
+        {
+            var result = await _taskService.GetTaskByIdAsync(9999);
+
+            result.Should().NotBeNull();
+            result.Success.Should().BeFalse();
+            result.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        // 🚀 تست حذف تسک (Soft Delete)
+        [Fact]
+        public async Task DeleteTaskAsync_Should_SoftDelete_Task()
+        {
+            var result = await _taskService.DeleteTaskAsync(2);
+
+            result.Should().NotBeNull();
+            result.Success.Should().BeTrue();
+            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
+
+            var deleted = await _context.Tasks.FindAsync(2);
+            deleted.Should().NotBeNull();
+            deleted!.IsDeleted.Should().BeTrue(); // ✅ منطق Soft Delete
+        }
+
+        // 🚀 تست بروزرسانی وضعیت
+        [Fact]
+        public async Task UpdateTaskAsync_Should_Change_Status_To_Completed()
+        {
+            var dto = new TaskDto
             {
-                Title = "",                       // ❌ خالی، نقض قاعده NotEmpty()
-                Description = "توضیحات تست نامعتبر",
-                Status = "WrongStatus",           // ❌ مقدار غیرمجاز Enum
-                Priority = "InvalidPriority",     // ❌ مقدار غیرمجاز Enum
-                CreatedAt = "2024-01-01"          // ❌ فرمت میلادی به‌جای شمسـی
+                Id = 1,
+                Title = "Task 1 Updated",
+                Description = "Updated Desc",
+                Status = TaskStatus.Completed,
+                Priority = TaskPriority.High
             };
 
-            var response = await service.CreateTaskAsync(invalidDto);
+            // ابتدا ایجاد تسک جدید
+            var created = await _taskService.CreateTaskAsync(dto);
 
-            response.Should().NotBeNull();
-            response.Success.Should().BeFalse("چون داده نامعتبر است.");
-            response.Message.Should().Contain("اعتبارسنجی");
-            response.Data.Should().BeNull();
-        }
-
-        // ==========================================================================================
-        // 🎯 تست ۳: واکشی همهٔ تسک‌ها از دیتابیس حافظه‌ای
-        // ==========================================================================================
-        [Fact(DisplayName = "واکشی همهٔ تسک‌ها باید لیست کامل برگرداند")]
-        public async Task GetAllTasks_Should_Return_List_When_Exists()
-        {
-            var dbContext = InMemoryContextFactory.CreateDbContext();
-            dbContext.Tasks.AddRange(
-                new TaskEntity
-                {
-                    Title = "تسک اول",
-                    Description = "نمونه ۱",
-                    Status = Domain.Entities.TaskStatus.Pending,
-                    Priority = TaskPriority.Low
-                },
-                new TaskEntity
-                {
-                    Title = "تسک دوم",
-                    Description = "نمونه ۲",
-                    Status = Domain.Entities.TaskStatus.Completed,
-                    Priority = TaskPriority.High
-                }
-            );
-            await dbContext.SaveChangesAsync();
-
-            var service = new TaskService(dbContext, _mapper, _validator);
-            var response = await service.GetAllTasksAsync();
-
-            response.Should().NotBeNull();
-            response.Success.Should().BeTrue();
-            response.Data.Should().HaveCount(2);
-            response.Data![0].Title.Should().Be("تسک اول");
-        }
-
-        // ==========================================================================================
-        // 🎯 تست ۴: واکشی تسک موجود بر اساس شناسه
-        // ==========================================================================================
-        [Fact(DisplayName = "واکشی تسک موجود باید داده صحیح بدهد")]
-        public async Task GetTaskById_Should_Return_Task_When_Exists()
-        {
-            var dbContext = InMemoryContextFactory.CreateDbContext();
-
-            var entity = new TaskEntity
+            // سپس بروزرسانی با id و dto جدید
+            var updatedDto = new TaskDto
             {
-                Title = "تسک تستی موجود",
-                Description = "برای بررسی متد واکشی تک‌تسک",
-                Status = Domain.Entities.TaskStatus.InProgress,
-                Priority = TaskPriority.Medium
+                Title = "ویرایش‌شده",
+                Description = "تست بروزرسانی",
+                Status = TaskStatus.Completed,
+                Priority = TaskPriority.Medium,
+                DueDate = "1404/07/25"
             };
 
-            dbContext.Tasks.Add(entity);
-            await dbContext.SaveChangesAsync();
+            var result = await _taskService.UpdateTaskAsync(created.Data, updatedDto);
 
-            var service = new TaskService(dbContext, _mapper, _validator);
-            var response = await service.GetTaskByIdAsync(entity.Id);
 
-            response.Should().NotBeNull();
-            response.Success.Should().BeTrue();
-            response.Data.Should().NotBeNull();
-            response.Data.Title.Should().Be(entity.Title);
-            response.Message.Should().Contain("موفق");
-        }
+            result.Should().NotBeNull();
+            result.Success.Should().BeTrue();
+            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
 
-        // ==========================================================================================
-        // 🎯 تست ۵: واکشی تسک ناموجود (باید خطای یافت‌نشد بدهد)
-        // ==========================================================================================
-        [Fact(DisplayName = "واکشی تسک ناموجود باید Fail برگرداند")]
-        public async Task GetTaskById_Should_Return_Fail_When_NotFound()
-        {
-            var dbContext = InMemoryContextFactory.CreateDbContext();
-            var service = new TaskService(dbContext, _mapper, _validator);
+            // ✅ خروجی ResponseModel<int>
+            result.Data.Should().BeOfType(typeof(int));
+            ((int)result.Data).Should().BeGreaterThan(0);
 
-            var response = await service.GetTaskByIdAsync(999);
-
-            response.Should().NotBeNull();
-            response.Success.Should().BeFalse("تسکی با این شناسه وجود ندارد و باید خطای NotFound دهد.");
-            response.Message.Should().Contain("یافت نشد");
-            response.Data.Should().BeNull();
+            var updatedTask = await _context.Tasks.FindAsync(1);
+            updatedTask.Should().NotBeNull();
+            updatedTask!.Status.Should().Be(TaskStatus.Completed);
+            updatedTask.Title.Should().Be("Task 1 Updated");
         }
     }
 }

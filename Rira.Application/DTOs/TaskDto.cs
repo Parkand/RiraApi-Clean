@@ -1,4 +1,7 @@
-﻿namespace Rira.Application.DTOs
+﻿using Rira.Domain.Enums;
+using TaskStatus = Rira.Domain.Enums.TaskStatus;
+
+namespace Rira.Application.DTOs
 {
     /// <summary>
     /// 📦 مدل انتقال داده‌ها برای موجودیت Task.
@@ -32,7 +35,7 @@
         /// Pending, InProgress, Completed, Cancelled.
         /// در سمت سرور به TaskStatus تبدیل می‌شود (Case-insensitive).
         /// </summary>
-        public string Status { get; set; } = string.Empty;
+        public TaskStatus Status { get; set; }
 
         /// <summary>
         /// اولویت تسک در قالب رشته.
@@ -40,7 +43,7 @@
         /// Low, Medium, High, Critical.
         /// در سمت سرور به TaskPriority تبدیل می‌شود (Case-insensitive).
         /// </summary>
-        public string Priority { get; set; } = string.Empty;
+        public TaskPriority Priority { get; set; } 
 
         /// <summary>
         /// تاریخ سررسید تسک (DueDate) با فرمت شمسی "yyyy/MM/dd".

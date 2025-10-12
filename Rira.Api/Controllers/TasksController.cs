@@ -1,123 +1,72 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Rira.Application.DTOs;
-using Rira.Application.Interfaces;
-using Rira.Application.Models;
+﻿using MediatR;
+using Microsoft.AspNetCore.Mvc;
+using Rira.Application.Features.Tasks.Commands.Create;
+using Rira.Application.Features.Tasks.Commands.Update;
+using Rira.Application.Features.Tasks.Commands.Delete;
+using Rira.Application.Features.Tasks.Queries.GetAll;
+using Rira.Application.Features.Tasks.Queries.GetById;
+using System.Threading.Tasks;
 
-namespace Rira.API.Controllers
+namespace Rira.Api.Controllers
 {
+    /// <summary>
+    /// کنترلر مدیرت عملیات تسک‌ها
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class TasksController : ControllerBase
     {
-        // ======================= وابستگی‌ها ===============================
-        private readonly ITaskService _taskService;
+        private readonly IMediator _mediator;
 
-        // سازنده کنترلر با تزریق سرویس وظایف
-        public TasksController(ITaskService taskService)
+        public TasksController(IMediator mediator)
         {
-            _taskService = taskService;
+            _mediator = mediator;
         }
 
-        // ==================================================================
-        // 🎯 متد ایجاد Task جدید (Create)
-        // ==================================================================
-        // توضیح: این اکشن دادهٔ DTO ارسالی از بدنهٔ درخواست را گرفته و آن را
-        // به سرویس ارسال می‌کند تا از طریق لایه Application در دیتابیس ذخیره شود.
-        // پاسخ سرویس از نوع ResponseModel<TaskDto> است که شامل Success, Message و Data خواهد بود.
-        // در صورت موفقیت، پاسخ CreatedAtAction بر‌می‌گردد که محل دریافت رکورد
-        // جدید (GetTaskById) را نیز مشخص می‌کند.
-        // ==================================================================
-        [HttpPost]
-        public async Task<ActionResult<ResponseModel<TaskDto>>> CreateTask([FromBody] TaskDto dto)
+        // 🔹 دریافت همه تسک‌ها
+        [HttpGet("get-all")]
+        public async Task<IActionResult> GetAllTasks()
         {
-            // ✅ فراخوانی سرویس برای ایجاد رکورد جدید
-            var result = await _taskService.CreateTaskAsync(dto);
-
-            // بررسی موفقیت عملیات؛ در صورت شکست، پاسخ مناسب بازگردانده می‌شود
-            if (!result.Success || result.Data == null)
-            {
-                // اگر اعتبارسنجی یا عملیات ایجاد موفق نبود، پاسخ 400 برگردان
-                return BadRequest(result);
-            }
-
-            // ✅ پاسخ موفق:
-            // CreatedAtAction یک پاسخ 201 برمی‌گرداند و در URL بازگشتی شناسه رکورد را قرار می‌دهد.
-            // توجه: شناسه باید از داخل result.Data استخراج شود نه خود result.
-            return CreatedAtAction(
-                nameof(GetTaskById),               // نام اکشن مقصد برای دریافت رکورد
-                new { id = result.Data!.Id },      // شناسه رکورد جدید (اصلاح‌شده)
-                result                             // کل مدل پاسخ شامل داده و پیام موفقیت
-            );
+            var result = await _mediator.Send(new TaskGetAllQuery());
+            return StatusCode(result.StatusCode, result);
         }
 
-        // ==================================================================
-        // 🎯 متد واکشی تکیه بر شناسه (Read by Id)
-        // ==================================================================
-        // توضیح: این اکشن برای دریافت جزئیات یک تسک بر اساس شناسه استفاده می‌شود.
-        // با لایه Application در ارتباط است و پاسخ استاندارد ResponseModel<TaskDto> برمی‌گرداند.
-        // ==================================================================
-        [HttpGet("{id}")]
-        public async Task<ActionResult<ResponseModel<TaskDto>>> GetTaskById(int id)
+        // 🔹 دریافت تسک بر اساس ID
+        [HttpGet("get-by-id/{id:int}")]
+        public async Task<IActionResult> GetTaskById(int id)
         {
-            // فراخوانی سرویس برای واکشی رکورد مورد نظر
-            var result = await _taskService.GetTaskByIdAsync(id);
-
-            // بررسی اینکه آیا رکورد پیدا شده یا خیر
-            if (!result.Success || result.Data == null)
-            {
-                // اگر یافت نشده باشد، پاسخ 404 برگردان
-                return NotFound(result);
-            }
-
-            // اگر موفقیت‌آمیز باشد، پاسخ 200 با دادهٔ TaskDto بازگردانده می‌شود
-            return Ok(result);
+            var result = await _mediator.Send(new TaskGetByIdQuery { Id = id });
+            return StatusCode(result.StatusCode, result);
         }
 
-        // ==================================================================
-        // 🎯 متد واکشی همهٔ تسک‌ها (Read All)
-        // ==================================================================
-        // توضیح: این اکشن فهرست تمام Taskها را از سرویس دریافت کرده و
-        // با استفاده از ResponseModel<List<TaskDto>> پاسخ می‌دهد.
-        // ==================================================================
-        [HttpGet]
-        public async Task<ActionResult<ResponseModel<List<TaskDto>>>> GetAllTasks()
+        // 🔹 ایجاد تسک جدید
+        [HttpPost("create")]
+        public async Task<IActionResult> CreateTask([FromBody] TaskCreateCommand command)
         {
-            var result = await _taskService.GetAllTasksAsync();
-            return Ok(result);
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var result = await _mediator.Send(command);
+            return StatusCode(result.StatusCode, result);
         }
 
-        // ==================================================================
-        // 🎯 متد حذف تسک بر اساس شناسه (Delete)
-        // ==================================================================
-        // توضیح: این اکشن یک رکورد مشخص را بر اساس شناسه حذف می‌کند و
-        // اگر حذف موفق باشد، ResponseModel با پیام "حذف موفق" برمی‌گردانده می‌شود.
-        // ==================================================================
-        [HttpDelete("{id}")]
-        public async Task<ActionResult<ResponseModel<bool>>> DeleteTask(int id)
+        // 🔹 بروزرسانی تسک
+        [HttpPut("update")]
+        public async Task<IActionResult> UpdateTask([FromBody] TaskUpdateCommand command)
         {
-            var result = await _taskService.DeleteTaskAsync(id);
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-            if (!result.Success)
-                return NotFound(result);
-
-            return Ok(result);
+            var result = await _mediator.Send(command);
+            return StatusCode(result.StatusCode, result);
         }
 
-        // ==================================================================
-        // 🎯 متد بروزرسانی تسک (Update)
-        // ==================================================================
-        // توضیح: این اکشن برای ویرایش رکورد موجود استفاده می‌شود.
-        // اگر داده ورودی صحیح باشد و رکورد وجود داشته باشد، ResponseModel<TaskDto> بازگردانده می‌شود.
-        // ==================================================================
-        [HttpPut("{id}")]
-        public async Task<ActionResult<ResponseModel<TaskDto>>> UpdateTask(int id, [FromBody] TaskDto dto)
+        // 🔹 حذف نرم تسک
+        [HttpDelete("delete/{id:int}")]
+        public async Task<IActionResult> DeleteTask(int id)
         {
-            var result = await _taskService.UpdateTaskAsync(id, dto);
-
-            if (!result.Success || result.Data == null)
-                return BadRequest(result);
-
-            return Ok(result);
+            var result = await _mediator.Send(new TaskDeleteCommand { Id = id });
+            return StatusCode(result.StatusCode, result);
         }
     }
 }

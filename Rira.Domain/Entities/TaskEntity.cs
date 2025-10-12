@@ -1,5 +1,7 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Rira.Domain.Enums;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using TaskStatus = Rira.Domain.Enums.TaskStatus;
 
 namespace Rira.Domain.Entities
 {
@@ -77,39 +79,39 @@ namespace Rira.Domain.Entities
 
     // ---------------- Enumها ----------------
 
-    /// <summary>
-    /// وضعیت‌های ممکن برای یک تسک
-    /// </summary>
-    public enum TaskStatus
-    {
-        /// <summary>در انتظار شروع</summary>
-        Pending,
+    ///// <summary>
+    ///// وضعیت‌های ممکن برای یک تسک
+    ///// </summary>
+    //public enum TaskStatus
+    //{
+    //    /// <summary>در انتظار شروع</summary>
+    //    Pending,
 
-        /// <summary>در حال انجام</summary>
-        InProgress,
+    //    /// <summary>در حال انجام</summary>
+    //    InProgress,
 
-        /// <summary>تکمیل شده</summary>
-        Completed,
+    //    /// <summary>تکمیل شده</summary>
+    //    Completed,
 
-        /// <summary>لغو شده</summary>
-        Cancelled
-    }
+    //    /// <summary>لغو شده</summary>
+    //    Cancelled
+    //}
 
-    /// <summary>
-    /// سطح اولویت وظیفه
-    /// </summary>
-    public enum TaskPriority
-    {
-        /// <summary>کم‌اهمیت</summary>
-        Low,
+    ///// <summary>
+    ///// سطح اولویت وظیفه
+    ///// </summary>
+    //public enum TaskPriority
+    //{
+    //    /// <summary>کم‌اهمیت</summary>
+    //    Low,
 
-        /// <summary>متوسط</summary>
-        Medium,
+    //    /// <summary>متوسط</summary>
+    //    Medium,
 
-        /// <summary>مهم</summary>
-        High,
+    //    /// <summary>مهم</summary>
+    //    High,
 
-        /// <summary>بحرا (اضطراری)</summary>
-        Critical
-    }
+    //    /// <summary>بحرا (اضطراری)</summary>
+    //    Critical
+    //}
 }

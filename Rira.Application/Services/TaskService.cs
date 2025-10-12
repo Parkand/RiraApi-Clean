@@ -3,9 +3,10 @@ using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using Rira.Application.Common;
 using Rira.Application.DTOs;
-using Rira.Application.Interfaces; // ⬅️ محل تعریف IAppDbContext
+using Rira.Application.Interfaces;
 using Rira.Application.Validators;
 using Rira.Domain.Entities;
+using System.Net;
 
 namespace Rira.Application.Services
 {
@@ -13,38 +14,19 @@ namespace Rira.Application.Services
     /// ===========================================================================
     /// ✅ سرویس اصلی مدیریت تسک‌ها (TaskService)
     /// ---------------------------------------------------------------------------
-    /// این کلاس در لایه‌ی Application قرار دارد و برای تعامل با داده‌ها از
-    /// اینترفیس IAppDbContext استفاده می‌کند.
-    ///
-    /// مزیت استفاده از IAppDbContext بجای AppDbContext:
-    ///   - جداسازی کامل از لایه Persistence
-    ///   - امکان تست‌پذیری بالا در تست‌های واحد و Integration
-    ///   - پیروی از اصل Dependency Inversion
-    /// ---------------------------------------------------------------------------
-    /// تمام خروجی‌ها در قالب ResponseModel<T> برگردانده می‌شوند که شامل:
-    ///   • Success : نشان‌دهنده موفقیت یا شکست عملیات
-    ///   • Message : پیام فارسی قابل‌خواندن برای کاربر
-    ///   • Data : نتیجه نهایی یا Null در حالت خطا
+    /// این کلاس در لایه‌ی Application قرار دارد و از IAppDbContext برای تعامل با داده‌ها استفاده می‌کند.
+    /// تمام خروجی‌ها در قالب ResponseModel<T> برگردانده می‌شوند که متدهای کمکی شامل:
+    ///   - Ok(...)        → عملیات موفق با کد 200
+    ///   - Fail(...)      → عملیات ناموفق با پیام خطا
+    ///   - NotFound(...)  → برای رکوردهای پیدا نشد
     /// ===========================================================================
     /// </summary>
     public class TaskService : ITaskService
     {
-        // =======================================================================================
-        // 🔹 وابستگی‌های داخلی سرویس - تزریق از بیرون
-        // ---------------------------------------------------------------------------------------
-        //   1️⃣ IAppDbContext   → اینترفیس انتزاعی دیتابیس (EF در لایه Persistence)
-        //   2️⃣ IMapper         → نگاشت بین Entity و DTO
-        //   3️⃣ TaskDtoValidator → اعتبارسنجی داده‌های ورودی با FluentValidation
-        // =======================================================================================
         private readonly IAppDbContext _dbContext;
         private readonly IMapper _mapper;
         private readonly TaskDtoValidator _validator;
 
-        // =======================================================================================
-        // 🏗️ سازنده سرویس
-        // ---------------------------------------------------------------------------------------
-        // وابستگی‌ها توسط DI تزریق می‌شوند تا تست‌پذیری و جداسازی معماری حفظ شود.
-        // =======================================================================================
         public TaskService(IAppDbContext dbContext, IMapper mapper, TaskDtoValidator validator)
         {
             _dbContext = dbContext;
@@ -54,110 +36,89 @@ namespace Rira.Application.Services
 
         // =======================================================================================
         // 🟩 CreateTaskAsync - ایجاد تسک جدید
-        // ---------------------------------------------------------------------------------------
-        // مراحل:
-        //   1️⃣ اعتبارسنجی داده با Validator
-        //   2️⃣ نگاشت DTO → Entity
-        //   3️⃣ ذخیره در دیتابیس
-        //   4️⃣ تولد خروجی ResponseModel<TaskDto>
         // =======================================================================================
-        public async Task<ResponseModel<TaskDto>> CreateTaskAsync(TaskDto dto)
+        public async Task<ResponseModel<int>> CreateTaskAsync(TaskDto dto)
         {
-            ValidationResult result = _validator.Validate(dto);
-            if (!result.IsValid)
+            ValidationResult validation = _validator.Validate(dto);
+            if (!validation.IsValid)
             {
-                string errors = string.Join(" ؛ ", result.Errors.ConvertAll(e => e.ErrorMessage));
-                return ResponseModel<TaskDto>.Fail($"داده‌ها معتبر نیستند: {errors}");
+                string errors = string.Join(" ؛ ", validation.Errors.ConvertAll(e => e.ErrorMessage));
+                return ResponseModel<int>.Fail($"داده‌ها معتبر نیستند: {errors}", (int)HttpStatusCode.BadRequest);
             }
 
             var entity = _mapper.Map<TaskEntity>(dto);
-            _dbContext.Tasks.Add(entity);
+            await _dbContext.Tasks.AddAsync(entity);
             await _dbContext.SaveChangesAsync();
 
-            var createdDto = _mapper.Map<TaskDto>(entity);
-            return ResponseModel<TaskDto>.Ok("تسک با موفقیت ایجاد شد.", createdDto);
+            return ResponseModel<int>.Ok(entity.Id, "✅ تسک با موفقیت ایجاد شد.");
         }
 
         // =======================================================================================
         // 🟦 GetAllTasksAsync - واکشی تمام تسک‌ها
-        // ---------------------------------------------------------------------------------------
-        // رکوردهای جدول واکشی، مرتب‌سازی و نگاشت به لیست DTO انجام می‌شود.
         // =======================================================================================
         public async Task<ResponseModel<List<TaskDto>>> GetAllTasksAsync()
         {
             var entities = await _dbContext.Tasks
+                .Where(t => !t.IsDeleted)
                 .OrderByDescending(t => t.Id)
                 .ToListAsync();
 
             var dtos = _mapper.Map<List<TaskDto>>(entities);
-            return ResponseModel<List<TaskDto>>.Ok("تمام تسک‌ها با موفقیت واکشی شدند.", dtos);
+            return ResponseModel<List<TaskDto>>.Ok(dtos, "✅ تمام تسک‌ها با موفقیت واکشی شدند.");
         }
 
         // =======================================================================================
         // 🟨 GetTaskByIdAsync - واکشی تسک بر اساس شناسه
-        // ---------------------------------------------------------------------------------------
-        // اگر تسک یافت نشود، پاسخ Fail برگشت داده می‌شود.
         // =======================================================================================
         public async Task<ResponseModel<TaskDto>> GetTaskByIdAsync(int id)
         {
-            var entity = await _dbContext.Tasks.FirstOrDefaultAsync(t => t.Id == id);
+            var entity = await _dbContext.Tasks.FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
             if (entity == null)
-                return ResponseModel<TaskDto>.Fail($"تسک با شناسه {id} یافت نشد.");
+                return ResponseModel<TaskDto>.NotFound($"❌ تسک با شناسه {id} یافت نشد.");
 
             var dto = _mapper.Map<TaskDto>(entity);
-            return ResponseModel<TaskDto>.Ok("تسک با موفقیت یافت شد.", dto);
+            return ResponseModel<TaskDto>.Ok(dto, "✅ تسک با موفقیت یافت شد.");
         }
 
         // =======================================================================================
-        // 🟧 UpdateTaskAsync - بروزرسانی اطلاعات تسک (اصلاح‌شده با شناسه جداگانه)
-        // ---------------------------------------------------------------------------------------
-        // داده‌ی جدید دریافت می‌شود، اعتبارسنجی و سپس بروزرسانی انجام می‌گردد.
+        // 🟧 UpdateTaskAsync - بروزرسانی اطلاعات تسک
         // =======================================================================================
-        public async Task<ResponseModel<TaskDto>> UpdateTaskAsync(int id, TaskDto dto)
+        public async Task<ResponseModel<int>> UpdateTaskAsync(int id, TaskDto dto)
         {
-            // ⚙️ ۱️⃣ واکشی رکورد هدف با شناسه مشخص
-            var entity = await _dbContext.Tasks.FirstOrDefaultAsync(t => t.Id == id);
+            var entity = await _dbContext.Tasks.FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
             if (entity == null)
-                return ResponseModel<TaskDto>.Fail($"تسک با شناسه {id} یافت نشد.");
+                return ResponseModel<int>.NotFound($"❌ تسک با شناسه {id} یافت نشد.");
 
-            // ⚙️ ۲️⃣ اعتبارسنجی ورودی جدید
-            ValidationResult result = _validator.Validate(dto);
-            if (!result.IsValid)
+            ValidationResult validation = _validator.Validate(dto);
+            if (!validation.IsValid)
             {
-                string errors = string.Join(" ؛ ", result.Errors.ConvertAll(e => e.ErrorMessage));
-                return ResponseModel<TaskDto>.Fail($"داده‌های وارد شده معتبر نیستند: {errors}");
+                string errors = string.Join(" ؛ ", validation.Errors.ConvertAll(e => e.ErrorMessage));
+                return ResponseModel<int>.Fail($"داده‌های وارد شده معتبر نیستند: {errors}", (int)HttpStatusCode.BadRequest);
             }
 
-            // ⚙️ ۳️⃣ نگاشت داده‌های جدید روی موجودیت فعلی
             _mapper.Map(dto, entity);
+            entity.UpdatedAt = DateTime.Now.ToString("yyyy/MM/dd");
 
-            // بروزرسانی زمان آخرین تغییر
-            entity.UpdatedAt = dto.UpdatedAt ?? DateTime.Now.ToString("yyyy/MM/dd");
-
-            // ⚙️ ۴️⃣ ذخیره در دیتابیس
             _dbContext.Tasks.Update(entity);
             await _dbContext.SaveChangesAsync();
 
-            // ⚙️ ۵️⃣ ساخت DTO خروجی برای نمایش
-            var updatedDto = _mapper.Map<TaskDto>(entity);
-            return ResponseModel<TaskDto>.Ok("تسک با موفقیت بروزرسانی شد.", updatedDto);
+            return ResponseModel<int>.Ok(entity.Id, "✅ تسک با موفقیت بروزرسانی شد.");
         }
 
         // =======================================================================================
-        // 🟥 DeleteTaskAsync - حذف تسک
-        // ---------------------------------------------------------------------------------------
-        // حذف رکورد بر اساس شناسه و برگشت پاسخ موفق یا خطا.
+        // 🟥 DeleteTaskAsync - حذف نرم (Soft Delete)
         // =======================================================================================
-        public async Task<ResponseModel<object>> DeleteTaskAsync(int id)
+        public async Task<ResponseModel<int>> DeleteTaskAsync(int id)
         {
-            var entity = await _dbContext.Tasks.FirstOrDefaultAsync(t => t.Id == id);
+            var entity = await _dbContext.Tasks.FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
             if (entity == null)
-                return ResponseModel<object>.Fail($"تسک با شناسه {id} یافت نشد.");
+                return ResponseModel<int>.NotFound($"❌ تسک با شناسه {id} یافت نشد.");
 
-            _dbContext.Tasks.Remove(entity);
+            entity.IsDeleted = true;
+            _dbContext.Tasks.Update(entity);
             await _dbContext.SaveChangesAsync();
 
-            return ResponseModel<object>.Ok("تسک با موفقیت حذف شد.", null);
+            return ResponseModel<int>.Ok(entity.Id, "🗑️ تسک با موفقیت حذف شد (Soft Delete).");
         }
     }
 }

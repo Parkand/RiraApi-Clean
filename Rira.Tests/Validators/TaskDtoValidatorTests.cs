@@ -36,7 +36,8 @@ namespace Rira.Tests.Application.Common
             var fakeDto = new { Id = 1, Title = "تسک تستی" };
 
             // 🏗️ ساخت ResponseModel با پارامترهای ورودی مشخص
-            var response = new ResponseModel<object>(true, "عملیات با موفقیت انجام شد", fakeDto);
+            var response = ResponseModel<object>.Ok(fakeDto, "عملیات با موفقیت انجام شد");
+
 
             // ✅ بررسی تک‌تک ویژگی‌ها با FluentAssertions (که خواناتر از Assert ساده است)
             response.Success.Should().BeTrue("چون عملیات موفق اعلام شده است.");
@@ -54,7 +55,8 @@ namespace Rira.Tests.Application.Common
         public void Constructor_Should_Handle_Failure_Correctly()
         {
             // ⚙️ ساخت مدل پاسخ ناموفق
-            var response = new ResponseModel<string>(false, "خطا در پردازش داده", null);
+            var response = new ResponseModel<string>(false, "خطا در پردازش داده", 500, null);
+
 
             // ✅ بررسی وضعیت‌ها
             response.Success.Should().BeFalse("در حالت خطا باید Success=false باشد.");
@@ -75,7 +77,7 @@ namespace Rira.Tests.Application.Common
             var dto = new { Id = 5, Title = "تسک نمونه" };
 
             // 🧩 فراخوانی متد ایستا‌ی Ok
-            var response = ResponseModel<object>.Ok("تسک با موفقیت ثبت شد", dto);
+            var response = ResponseModel<object>.Ok(dto, "تسک با موفقیت ثبت شد");
 
             // ✅ بررسی مقداردهی نتیجه
             response.Success.Should().BeTrue("در متد Ok باید مقدار Success=true باشد.");
@@ -112,7 +114,7 @@ namespace Rira.Tests.Application.Common
         {
             // ✅ حالت موفقیت
             var successData = new { Id = 101, Title = "ثبت انجام شد" };
-            var okResponse = ResponseModel<object>.Ok("عملیات با موفقیت انجام شد", successData);
+            var okResponse = ResponseModel<object>.Ok(successData, "عملیات با موفقیت انجام شد");
 
             okResponse.Success.Should().BeTrue();
             okResponse.Message.Should().Contain("موفقیت");
