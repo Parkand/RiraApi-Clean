@@ -1,17 +1,19 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Rira.Domain.Entities;
 using Rira.Application.Interfaces;
+using Rira.Domain.Entities;
+using System.Reflection;
 
 namespace Rira.Persistence.Data
 {
     /// <summary>
-    /// 🧩 کلاس اصلی اتصال به پایگاه داده در پروژه ریرا
-    /// این کلاس DbContext را پیاده‌سازی کرده و از IAppDbContext در لایه Application استفاده می‌کند.
+    /// 🌐 کلاس اصلی DbContext ریرا:
+    /// وظیفه‌ی ارتباط بین دامنه (Entities) و دیتابیس را برعهده دارد.
+    /// پیاده‌سازی <see cref="IAppDbContext"/> برای تزریق انتزاعی در Handlerها.
     /// </summary>
     public class AppDbContext : DbContext, IAppDbContext
     {
         /// <summary>
-        /// سازنده‌ی کانتکست با دریافت تنظیمات اتصال از DI
+        /// سازنده‌ی اصلی که به‌صورت تزریق وابستگی (DI) فراخوانی می‌شود.
         /// </summary>
         public AppDbContext(DbContextOptions<AppDbContext> options)
             : base(options)
@@ -19,33 +21,32 @@ namespace Rira.Persistence.Data
         }
 
         /// <summary>
-        /// جدول وظایف (تسک‌ها)
+        /// مجموعه‌ی جدول کارمندان (Employees Table)
+        /// </summary>
+        public DbSet<EmployeeEntity> Employees { get; set; }
+
+        /// <summary>
+        /// مجموعه‌ی جدول وظایف یا Taskها (Tasks Table)
         /// </summary>
         public DbSet<TaskEntity> Tasks { get; set; }
 
         /// <summary>
-        /// تنظیمات مدل‌سازی و فیلدهای ویژه (در زمان مایگریشن)
+        /// ذخیره‌سازی تغییرات در پایگاه داده با پشتیبانی از CancellationToken.
+        /// </summary>
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// اعمال تمامی پیکربندی‌های Fluent از اسمبلی جاری (برای Entities و Seed Data).
         /// </summary>
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // بارگذاری تنظیمات Fluent از اسمبلیِ پروژه‌ی Persistence
+            modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+
             base.OnModelCreating(modelBuilder);
-
-            // تعریف کلید اصلی برای جدول وظایف
-            modelBuilder.Entity<TaskEntity>()
-                .HasKey(t => t.Id);
-
-            // تعریف شرط حذف نرم
-            modelBuilder.Entity<TaskEntity>()
-                .HasQueryFilter(t => !t.IsDeleted);
-
-            // محدودسازی طول رشته‌های تاریخ برای سازگاری دیتابیس
-            modelBuilder.Entity<TaskEntity>()
-                .Property(t => t.CreatedAt)
-                .HasMaxLength(10);
-
-            modelBuilder.Entity<TaskEntity>()
-                .Property(t => t.UpdatedAt)
-                .HasMaxLength(10);
         }
     }
 }

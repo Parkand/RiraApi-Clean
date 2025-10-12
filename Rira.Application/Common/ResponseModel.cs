@@ -1,27 +1,50 @@
 ﻿namespace Rira.Application.Common
 {
     /// <summary>
-    /// 🔹 مدل استاندارد پاسخ API برای تمامی اکشن‌ها
+    /// 🎯 مدل استاندارد پاسخ برای تمامی اکشن‌ها و سرویس‌های پروژه ریرا
+    /// ---------------------------------------------------------------
+    /// هدف:
+    /// ایجاد ساختاری یکسان برای پاسخ‌های خروجی در تمام سطوح (Controller, Handler, Service)
+    /// شامل وضعیت، پیام، داده و زمان ایجاد پاسخ.
     /// </summary>
     public class ResponseModel<T>
     {
+        /// <summary>آیا عملیات با موفقیت انجام شد؟</summary>
         public bool Success { get; set; }
+
+        /// <summary>پیغام فارسی جهت نمایش یا لاگ</summary>
         public string Message { get; set; } = string.Empty;
+
+        /// <summary>داده خروجی از نوع جنریک (مثلاً DTO یا لیست)</summary>
         public T? Data { get; set; }
+
+        /// <summary>کد وضعیت منطقی یا HTTP مرتبط (مثلاً 200، 404، 500)</summary>
+        public int StatusCode { get; set; }
+
+        /// <summary>تاریخ و زمان ایجاد پاسخ (به صورت UTC)</summary>
+        public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
 
         public ResponseModel() { }
 
-        public ResponseModel(bool success, string message, T? data)
+        public ResponseModel(bool success, string message, int statusCode, T? data = default)
         {
             Success = success;
             Message = message;
+            StatusCode = statusCode;
             Data = data;
         }
 
-        public static ResponseModel<T> Ok(string message, T data)
-            => new ResponseModel<T>(true, message, data);
+        // ============================================================
+        // 🔹 متدهای کمکی استاندارد برای خروجی‌های رایج
+        // ============================================================
 
-        public static ResponseModel<T> Fail(string message)
-            => new ResponseModel<T>(false, message, default);
+        public static ResponseModel<T> Ok(T data, string message = "✅ عملیات با موفقیت انجام شد") =>
+            new ResponseModel<T>(true, message, 200, data);
+
+        public static ResponseModel<T> Fail(string message = "❌ خطایی در انجام عملیات رخ داد", int statusCode = 500) =>
+            new ResponseModel<T>(false, message, statusCode);
+
+        public static ResponseModel<T> NotFound(string message = "⚠️ داده مورد نظر یافت نشد") =>
+            new ResponseModel<T>(false, message, 404);
     }
 }
