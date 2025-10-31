@@ -14,8 +14,6 @@ using Rira.Application.MappingProfiles;
 using Rira.Application.Validators;
 using Rira.Domain.Entities;
 using Rira.Persistence.Data;
-using Microsoft.Extensions.DependencyInjection;
-using AutoMapper;
 
 namespace Rira.IntegrationTests
 {
@@ -46,7 +44,6 @@ namespace Rira.IntegrationTests
             {
                 cfg.AddProfile<TaskProfile>();
             });
-
 
             // 🟢 MediatR برای Command/Query Handlerها
             services.AddMediatR(cfg =>
