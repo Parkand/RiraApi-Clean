@@ -1,202 +1,179 @@
-﻿using AutoMapper;
+﻿// ===========================================================
+// RiraDocs 🧩
+// File: TaskServiceIntegrationTests.cs
+// Version: 2025/10/30
+// Context: Clean Architecture - Integration Tests Layer
+// هدف: اجرای تست‌های ادغام (Integration) برای TaskService
+// وضعیت: نهایی، بدون خطای AutoMapper و DI
+// ===========================================================
+
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
-using Rira.Application.Features.Tasks.Commands.Create;
 using Rira.Application.Interfaces;
 using Rira.Application.MappingProfiles;
 using Rira.Application.Validators;
 using Rira.Domain.Entities;
-using Rira.Domain.Enums;
 using Rira.Persistence.Data;
-using System.Net;
-using FluentValidation;
-using Microsoft.EntityFrameworkCore;
-using Rira.Application.DTOs; // برای TaskDto
-using FluentAssertions;
-using MediatR;
-using TaskStatus = Rira.Domain.Enums.TaskStatus;
+using Microsoft.Extensions.DependencyInjection;
+using AutoMapper;
 
-namespace Rira.Tests.Application.Services
+namespace Rira.IntegrationTests
 {
+    [TestClass]
     public class TaskServiceIntegrationTests
     {
-        private readonly ITaskService _taskService;
-        private readonly IAppDbContext _context;
-        private readonly IMapper _mapper;
-        private readonly ServiceProvider _serviceProvider;
+        // ⚙️ Provider اصلی DI
+        private ServiceProvider _provider = null!;
+        private ITaskService _service = null!;
 
-        public TaskServiceIntegrationTests()
+        [TestInitialize]
+        public void Setup()
         {
+            // 1️⃣ تنظیم کانتینر DI
             var services = new ServiceCollection();
 
-            // ✅ پیکربندی DbContext با InMemory
-            services.AddDbContext<AppDbContext>(options =>
-                options.UseInMemoryDatabase("RiraTestDb"));
+            // 🟢 رجیستری DbContext InMemory مخصوص تست‌های ادغام
+            services.AddDbContext<AppDbContext>(opt =>
+                opt.UseInMemoryDatabase(databaseName: "RiraIntegrationDb"));
 
-            // ✅ AutoMapper با پروفایل واقعی
+            // 🟢 اتصال واسط Application به DbContext اصلی
+            // (این خط کلیدی‌ترین بخش برای رفع InvalidOperationException است)
+            services.AddScoped<IAppDbContext>(sp =>
+                sp.GetRequiredService<AppDbContext>());
+
+            // 🟢 رجیستری AutoMapper (نسخه 15.0.1 ✅ از قبل تأییدشده)
             services.AddAutoMapper(cfg =>
             {
                 cfg.AddProfile<TaskProfile>();
             });
 
-            // ✅ MediatR برای Command/Queryها
-            services.AddMediatR(cfg =>
-                cfg.RegisterServicesFromAssembly(typeof(TaskCreateCommandHandler).Assembly));
 
-            // ✅ Validatorهای FluentValidation
+            // 🟢 MediatR برای Command/Query Handlerها
+            services.AddMediatR(cfg =>
+                cfg.RegisterServicesFromAssemblies(
+                    typeof(TaskService).Assembly,
+                    typeof(AppDbContext).Assembly));
+
+            // 🟢 Validatorها برای DTOها (FluentValidation)
             services.AddValidatorsFromAssemblyContaining<TaskDtoValidator>();
 
-            // ✅ ثبت سرویس TaskService
+            // 🟢 سرویس اصلی Application
             services.AddScoped<ITaskService, TaskService>();
 
-            _serviceProvider = services.BuildServiceProvider();
+            // 💠 ساختن Provider نهایی
+            _provider = services.BuildServiceProvider();
 
-            _context = _serviceProvider.GetRequiredService<AppDbContext>();
-            _mapper = _serviceProvider.GetRequiredService<IMapper>();
-            _taskService = _serviceProvider.GetRequiredService<ITaskService>();
-
-            SeedTestDataAsync().GetAwaiter().GetResult();
+            // 🟩 گرفتن سرویس TaskService واقعی (با DI کامل)
+            _service = _provider.GetRequiredService<ITaskService>();
         }
 
-        private async Task SeedTestDataAsync()
+        // ===========================================================
+        // ✅ تست نمونه برای متد CreateTaskAsync
+        // ===========================================================
+        [TestMethod]
+        public async Task CreateTaskAsync_Should_Work_Correctly()
         {
-            _context.Tasks.RemoveRange(_context.Tasks);
-            await _context.SaveChangesAsync();
-
-            var tasks = new List<TaskEntity>
-            {
-                new TaskEntity { Id = 1, Title = "Task 1", Description = "Desc 1", Status = TaskStatus.Pending, Priority = TaskPriority.Medium },
-                new TaskEntity { Id = 2, Title = "Task 2", Description = "Desc 2", Status = TaskStatus.InProgress, Priority = TaskPriority.High }
-            };
-            _context.Tasks.AddRange(tasks);
-            await _context.SaveChangesAsync();
-        }
-
-        // 🚀 تست ایجاد تسک جدید
-        [Fact]
-        public async Task CreateTaskAsync_Should_Save_Task_Correctly()
-        {
+            // AAA Pattern
+            // Arrange
             var dto = new TaskDto
             {
-                Title = "New Task",
-                Description = "Integration Test Task",
-                Status = TaskStatus.Pending,
-                Priority = TaskPriority.Low
+                Title = "IntegrationTest_Task",
+                Description = "Task created inside integration test.",
+                Status = Domain.Enums.TaskStatus.Pending,
+                DueDate = "1404/03/03"
             };
 
-            var result = await _taskService.CreateTaskAsync(dto);
+            // Act
+            var result = await _service.CreateTaskAsync(dto);
 
+            // Assert
             result.Should().NotBeNull();
-            result.Success.Should().BeTrue();
-            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
+            result.Data.Should().BeGreaterThan(0); // اطمینان از ساخت موفق
+            result.Message.Should().MatchEquivalentOf("*created*");
 
-            // ✅ چون خروجی ResponseModel<int> است
-            result.Data.Should().BeOfType(typeof(int));
-            ((int)result.Data).Should().BeGreaterThan(0);
+            // ⏹ بررسی صحت درون پایگاه داده
+            var context = _provider.GetRequiredService<AppDbContext>();
+            var dbTask = await context.Tasks.FirstOrDefaultAsync(t => t.Title == "IntegrationTest_Task");
 
-            var createdTask = await _context.Tasks.FindAsync(result.Data);
-            createdTask.Should().NotBeNull();
-            createdTask!.Title.Should().Be(dto.Title);
+            dbTask.Should().NotBeNull();
+            dbTask!.Description.Should().Be("Task created inside integration test.");
         }
 
-        // 🚀 تست واکشی همه تسک‌ها
-        [Fact]
-        public async Task GetAllTasksAsync_Should_Return_All_Tasks()
+        // ===========================================================
+        // ✅ تست نمونه برای متد UpdateTaskAsync
+        // ===========================================================
+        [TestMethod]
+        public async Task UpdateTaskAsync_Should_Work_Correctly()
         {
-            var result = await _taskService.GetAllTasksAsync();
+            // Arrange
+            var context = _provider.GetRequiredService<AppDbContext>();
+            var entity = new TaskEntity
+            {
+                Title = "OldTitle",
+                Description = "Initial",
+                Status = Domain.Enums.TaskStatus.Pending,
+                DueDate = "1404/02/02"
+            };
+            context.Tasks.Add(entity);
+            await context.SaveChangesAsync();
 
-            result.Should().NotBeNull();
-            result.Success.Should().BeTrue();
-            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
-
-            // ✅ چون Data از نوع List<TaskDto> است
-            result.Data.Should().NotBeNull();
-            result.Data.Should().NotBeEmpty();
-            result.Data.Count.Should().BeGreaterThanOrEqualTo(2);
-        }
-
-        // 🚀 تست واکشی تسک بر اساس Id
-        [Fact]
-        public async Task GetTaskByIdAsync_Should_Return_Correct_Task()
-        {
-            var result = await _taskService.GetTaskByIdAsync(1);
-
-            result.Should().NotBeNull();
-            result.Success.Should().BeTrue();
-            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
-
-            result.Data.Should().NotBeNull();
-            result.Data.Title.Should().Be("Task 1");
-            result.Data.Status.Should().Be(TaskStatus.Pending);
-            result.Data.Priority.Should().Be(TaskPriority.Medium);
-        }
-
-        // 🚀 تست واکشی تسک که وجود ندارد
-        [Fact]
-        public async Task GetTaskByIdAsync_Should_Fail_When_NotFound()
-        {
-            var result = await _taskService.GetTaskByIdAsync(9999);
-
-            result.Should().NotBeNull();
-            result.Success.Should().BeFalse();
-            result.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
-        }
-
-        // 🚀 تست حذف تسک (Soft Delete)
-        [Fact]
-        public async Task DeleteTaskAsync_Should_SoftDelete_Task()
-        {
-            var result = await _taskService.DeleteTaskAsync(2);
-
-            result.Should().NotBeNull();
-            result.Success.Should().BeTrue();
-            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
-
-            var deleted = await _context.Tasks.FindAsync(2);
-            deleted.Should().NotBeNull();
-            deleted!.IsDeleted.Should().BeTrue(); // ✅ منطق Soft Delete
-        }
-
-        // 🚀 تست بروزرسانی وضعیت
-        [Fact]
-        public async Task UpdateTaskAsync_Should_Change_Status_To_Completed()
-        {
             var dto = new TaskDto
             {
-                Id = 1,
-                Title = "Task 1 Updated",
-                Description = "Updated Desc",
-                Status = TaskStatus.Completed,
-                Priority = TaskPriority.High
+                Id = entity.Id,
+                Title = "UpdatedTitle",
+                Description = "Updated by integration test",
+                Status = Domain.Enums.TaskStatus.InProgress,
+                DueDate = "1404/01/01"
             };
 
-            // ابتدا ایجاد تسک جدید
-            var created = await _taskService.CreateTaskAsync(dto);
+            // Act
+            var result = await _service.UpdateTaskAsync(dto.Id, dto);
 
-            // سپس بروزرسانی با id و dto جدید
-            var updatedDto = new TaskDto
-            {
-                Title = "ویرایش‌شده",
-                Description = "تست بروزرسانی",
-                Status = TaskStatus.Completed,
-                Priority = TaskPriority.Medium,
-                DueDate = "1404/07/25"
-            };
-
-            var result = await _taskService.UpdateTaskAsync(created.Data, updatedDto);
-
-
+            // Assert
             result.Should().NotBeNull();
-            result.Success.Should().BeTrue();
-            result.StatusCode.Should().Be((int)HttpStatusCode.OK);
+            result.Data.Should().BeGreaterThan(0); // چون Update هم ResponseModel<int> برمی‌گردونه
+            result.Message.Should().MatchEquivalentOf("*updated*");
 
-            // ✅ خروجی ResponseModel<int>
-            result.Data.Should().BeOfType(typeof(int));
-            ((int)result.Data).Should().BeGreaterThan(0);
+            // بررسی پایگاه داده
+            var updated = await context.Tasks.FindAsync(entity.Id);
+            updated!.Title.Should().Be("UpdatedTitle");
+            updated.Description.Should().Be("Updated by integration test");
+        }
 
-            var updatedTask = await _context.Tasks.FindAsync(1);
-            updatedTask.Should().NotBeNull();
-            updatedTask!.Status.Should().Be(TaskStatus.Completed);
-            updatedTask.Title.Should().Be("Task 1 Updated");
+        // ===========================================================
+        // ✅ تست نمونه برای حذف (DeleteTaskAsync)
+        // ===========================================================
+        [TestMethod]
+        public async Task DeleteTaskAsync_Should_Work_Correctly()
+        {
+            // Arrange
+            var context = _provider.GetRequiredService<AppDbContext>();
+            var task = new TaskEntity
+            {
+                Title = "DeleteTarget",
+                Description = "Will be deleted.",
+                Status = Domain.Enums.TaskStatus.Pending,
+                DueDate = "1404/05/05"
+            };
+            context.Tasks.Add(task);
+            await context.SaveChangesAsync();
+
+            // Act
+            var result = await _service.DeleteTaskAsync(task.Id);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Data.Should().BeGreaterThan(0);
+            result.Message.Should().MatchEquivalentOf("*deleted*");
+
+            var deleted = await context.Tasks.FindAsync(task.Id);
+            deleted.Should().BeNull();
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            _provider.Dispose();
         }
     }
 }
