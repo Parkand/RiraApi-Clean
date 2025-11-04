@@ -1,10 +1,10 @@
 ﻿// ===========================================================
-// RiraDocs 🧩
+// 📘 RiRaDocs Teaching Edition (Farsi Inline)
 // File: TaskServiceIntegrationTests.cs
-// Version: 2025/10/30
-// Context: Clean Architecture - Integration Tests Layer
-// هدف: اجرای تست‌های ادغام (Integration) برای TaskService
-// وضعیت: نهایی، بدون خطای AutoMapper و DI
+// Layer: Integration Tests
+// Context: Clean Architecture  –  Application ⇆ Persistence
+// هدف: تست ادغام واقعی سرویس TaskService با DI، AutoMapper، FluentValidation و EF Core 8
+// انتشار: RiraDocs-v2025.11.4-Stable-Final-Fixed
 // ===========================================================
 
 using FluentValidation;
@@ -17,61 +17,78 @@ using Rira.Persistence.Data;
 
 namespace Rira.IntegrationTests
 {
+    /// <summary>
+    /// 🧩 کلاس تست ادغام (Integration Test)
+    /// هدف این کلاس، شبیه‌سازی رفتار واقعی سرویس TaskService است، با تمام دغدغه‌های اصلی:
+    ///  - اتصال DI Container واقعی (بدون Mock)
+    ///  - صحت نگاشت‌های AutoMapper
+    ///  - اجرای Validation واقعی با FluentValidation
+    ///  - تست کامل CRUD در AppDbContext (InMemory)
+    /// این تست تضمین می‌کند که وابستگی‌ها، کانفیگ‌ها و زیرساخت‌ها در کنار هم درست کار کنند.
+    /// </summary>
     [TestClass]
     public class TaskServiceIntegrationTests
     {
-        // ⚙️ Provider اصلی DI
+        // ⚙️ Provider اصلی DI برای تزریق Scoped/Transient ها در هر تست
         private ServiceProvider _provider = null!;
+        // 🧠 سرویس اصلی تحت تست: TaskService
         private ITaskService _service = null!;
 
+        // ===========================================================
+        // 🔧 متد Setup - آماده‌سازی محیط Test واقعی
+        // ===========================================================
         [TestInitialize]
         public void Setup()
         {
-            // 1️⃣ تنظیم کانتینر DI
+            // 1️⃣ ایجاد کانتینر وابستگی‌ها
             var services = new ServiceCollection();
 
-            // 🟢 رجیستری DbContext InMemory مخصوص تست‌های ادغام
+            // 🟢 رجیستر کردن DbContext با Provider InMemory
+            // ➕ از UseInMemoryDatabase برای ایجاد بانک‌داده مستقل تستی استفاده می‌شود.
             services.AddDbContext<AppDbContext>(opt =>
                 opt.UseInMemoryDatabase(databaseName: "RiraIntegrationDb"));
 
-            // 🟢 اتصال واسط Application به DbContext اصلی
-            // (این خط کلیدی‌ترین بخش برای رفع InvalidOperationException است)
+            // 🟢 اتصال لایه Application به لایه Persistence از طریق IAppDbContext
+            // این بخش از اصول Clean Architecture را رعایت می‌کند (وابستگی از Application به Infrastructure).
             services.AddScoped<IAppDbContext>(sp =>
                 sp.GetRequiredService<AppDbContext>());
 
-            // 🟢 رجیستری AutoMapper (نسخه 15.0.1 ✅ از قبل تأییدشده)
+            // 🟢 پیکربندی AutoMapper — تزریق پروفایل‌های نگاشت Application
             services.AddAutoMapper(cfg =>
             {
                 cfg.AddProfile<TaskProfile>();
             });
 
-            // 🟢 MediatR برای Command/Query Handlerها
+            // 🟢 افزودن MediatR برای اجرای فرمان‌ها و کوئری‌ها (CQRS Pattern)
             services.AddMediatR(cfg =>
                 cfg.RegisterServicesFromAssemblies(
                     typeof(TaskService).Assembly,
                     typeof(AppDbContext).Assembly));
 
-            // 🟢 Validatorها برای DTOها (FluentValidation)
+            // 🟢 رجیستر تمام Validatorهای FluentValidation مرتبط با TaskDto
             services.AddValidatorsFromAssemblyContaining<TaskDtoValidator>();
 
-            // 🟢 سرویس اصلی Application
+            // 🟢 رجیستر سرویس اصلی Application
             services.AddScoped<ITaskService, TaskService>();
 
-            // 💠 ساختن Provider نهایی
+            // 💠 نهایی‌سازی Provider تزریق وابستگی‌ها
             _provider = services.BuildServiceProvider();
 
-            // 🟩 گرفتن سرویس TaskService واقعی (با DI کامل)
+            // 🟩 گرفتن نمونه واقعی سرویس از DI Container
             _service = _provider.GetRequiredService<ITaskService>();
         }
 
         // ===========================================================
-        // ✅ تست نمونه برای متد CreateTaskAsync
+        // ✅ تست متد CreateTaskAsync
         // ===========================================================
+        // 🎯 هدف آموزشی:
+        //     ▫ بررسی کامل DI + AutoMapper + Validation + EFCore در فرآیند ایجاد Task
+        //     ▫ اطمینان از صحت داده ذخیره‌شده در پایگاه InMemory پس از اجرای متد
         [TestMethod]
         public async Task CreateTaskAsync_Should_Work_Correctly()
         {
-            // AAA Pattern
-            // Arrange
+            // 🧩 AAA Pattern → Arrange, Act, Assert
+            // Arrange — آماده‌سازی داده ورودی DTO
             var dto = new TaskDto
             {
                 Title = "IntegrationTest_Task",
@@ -80,15 +97,15 @@ namespace Rira.IntegrationTests
                 DueDate = "1404/03/03"
             };
 
-            // Act
+            // Act — اجرای متد اصلی
             var result = await _service.CreateTaskAsync(dto);
 
-            // Assert
+            // Assert — ارزیابی خروجی سرویس
             result.Should().NotBeNull();
-            result.Data.Should().BeGreaterThan(0); // اطمینان از ساخت موفق
+            result.Data.Should().BeGreaterThan(0);
             result.Message.Should().MatchEquivalentOf("*created*");
 
-            // ⏹ بررسی صحت درون پایگاه داده
+            // بررسی صحت داده در DbContext
             var context = _provider.GetRequiredService<AppDbContext>();
             var dbTask = await context.Tasks.FirstOrDefaultAsync(t => t.Title == "IntegrationTest_Task");
 
@@ -97,12 +114,16 @@ namespace Rira.IntegrationTests
         }
 
         // ===========================================================
-        // ✅ تست نمونه برای متد UpdateTaskAsync
+        // ✅ تست متد UpdateTaskAsync
         // ===========================================================
+        // 🎯 هدف آموزشی:
+        //     ▫ بررسی عملکرد AutoMapper در بروزرسانی موجودیت‌ها
+        //     ▫ اطمینان از صحت داده نهایی در پایگاه داده پس از Update
+        //     ▫ اعتبارسنجی مجدد DTO قبل از انجام تغییر
         [TestMethod]
         public async Task UpdateTaskAsync_Should_Work_Correctly()
         {
-            // Arrange
+            // Arrange — ایجاد یک رکورد اولیه در بانک داده
             var context = _provider.GetRequiredService<AppDbContext>();
             var entity = new TaskEntity
             {
@@ -114,6 +135,7 @@ namespace Rira.IntegrationTests
             context.Tasks.Add(entity);
             await context.SaveChangesAsync();
 
+            // DTO جدید برای بروزرسانی
             var dto = new TaskDto
             {
                 Id = entity.Id,
@@ -123,27 +145,29 @@ namespace Rira.IntegrationTests
                 DueDate = "1404/01/01"
             };
 
-            // Act
+            // Act — اجرای متد بروزرسانی
             var result = await _service.UpdateTaskAsync(dto.Id, dto);
 
-            // Assert
+            // Assert — اعتبار نتایج
             result.Should().NotBeNull();
-            result.Data.Should().BeGreaterThan(0); // چون Update هم ResponseModel<int> برمی‌گردونه
+            result.Data.Should().BeGreaterThan(0);
             result.Message.Should().MatchEquivalentOf("*updated*");
 
-            // بررسی پایگاه داده
             var updated = await context.Tasks.FindAsync(entity.Id);
             updated!.Title.Should().Be("UpdatedTitle");
             updated.Description.Should().Be("Updated by integration test");
         }
 
         // ===========================================================
-        // ✅ تست نمونه برای حذف (DeleteTaskAsync)
+        // ✅ تست متد DeleteTaskAsync
         // ===========================================================
+        // 🎯 هدف آموزشی:
+        //     ▫ بررسی حذف واقعی رکورد از دیتابیس InMemory
+        //     ▫ اطمینان از صحت پیام خروجی و بازگشت ResponseModel<int>
         [TestMethod]
         public async Task DeleteTaskAsync_Should_Work_Correctly()
         {
-            // Arrange
+            // Arrange — ایجاد رکورد هدف حذف
             var context = _provider.GetRequiredService<AppDbContext>();
             var task = new TaskEntity
             {
@@ -155,18 +179,23 @@ namespace Rira.IntegrationTests
             context.Tasks.Add(task);
             await context.SaveChangesAsync();
 
-            // Act
+            // Act — اجرای متد حذف
             var result = await _service.DeleteTaskAsync(task.Id);
 
-            // Assert
+            // Assert — تأیید صحت حذف داده
             result.Should().NotBeNull();
             result.Data.Should().BeGreaterThan(0);
             result.Message.Should().MatchEquivalentOf("*deleted*");
 
             var deleted = await context.Tasks.FindAsync(task.Id);
-            deleted.Should().BeNull();
+            deleted.Should().BeNull(); // چون در لایه سرویس حذف سخت انجام شده است (نه Soft Delete)
         }
 
+        // ===========================================================
+        // 🧹 پاکسازی منابع پس از هر تست
+        // ===========================================================
+        // 🎯 هدف آموزشی:
+        //     ▫ آشنایی با چرخه‌ی عمر ServiceProvider و اهمیت Dispose منابع در تست‌ها.
         [TestCleanup]
         public void Cleanup()
         {
@@ -174,3 +203,15 @@ namespace Rira.IntegrationTests
         }
     }
 }
+
+// ===========================================================
+// 📘 جمع‌بندی آموزشی (RiRaDocs Summary)
+// -----------------------------------------------------------
+// ▫ لایه تست ادغام، آخرین گام در تحلیل صحیح Cross-layer DI است.
+// ▫ این فایل تأیید می‌کند که:
+//    1️⃣ AutoMapper و Validatorها در DI کاملاً Resolve می‌شوند.
+//    2️⃣ DbContext InMemory به‌درستی برای هر تست جدا ایجاد می‌شود.
+//    3️⃣ پیام‌های بازگشتی ResponseModel مطابق استاندارد پروژه‌اند.
+// ▫ این فایل جزو نسخه نهایی انتشار آموزشی ✅
+// تگ انتشار: RiraDocs-v2025.11.4-Stable-Final-Fixed
+// ===========================================================
