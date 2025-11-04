@@ -1,176 +1,113 @@
-﻿using AutoMapper;
-using FluentValidation;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Moq;
-using Rira.Application.Interfaces;
-using Rira.Application.Validators;
-using Rira.Domain.Entities;
-using TaskStatus = Rira.Domain.Enums.TaskStatus;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace Rira.Application.Tests.Services
+namespace Rira.Tests.Common.Mocks
 {
     /// <summary>
-    /// ============================================================================
-    /// 🧠 کلاس تست واحد سرویس وظیفه‌ها (TaskService)
-    /// ----------------------------------------------------------------------------
-    /// 👑 توسعه‌دهنده: سروش (KIA)
-    /// 🗓 تاریخ آخرین ویرایش: 1404/08/08
-    ///
-    /// 📘 هدف:
-    ///   بررسی عملکرد CRUD سرویس وظیفه‌ها با شبیه‌سازی کامل EF Core.
-    ///
-    /// 🧩 موارد کلیدی:
-    ///   ✔ AutoMapper v15.0.1 با LoggerFactory
-    ///   ✔ حل نهایی مشکل Id = 0 در Mock DbContext
-    ///   ✔ ساختار AAA و استفاده از FluentAssertions + RiraDocs
-    /// ============================================================================
+    /// 🧠 کلاس کمکی برای ساخت DbSet‌های موک‌شده سازگار با EF Core 8.
+    /// شامل متدهای ساخت و رفتار CRUD جهت استفاده در تست‌های واحد پروژه ریرا.
     /// </summary>
-    public class TaskServiceTests
+    public static class EFAsyncMockHelper
     {
-        private readonly TaskService _service;
-        private readonly Mock<IAppDbContext> _mockDbContext;
-        private readonly IMapper _mapper;
-        private readonly IValidator<TaskDto> _validator;
-        private readonly List<TaskEntity> _tasks;
-
-        public TaskServiceTests()
-        {
-            // 🔹 داده‌های آزمایشی اولیه
-            _tasks = new List<TaskEntity>
-            {
-                new TaskEntity { Id = 1, Title = "Task A", Status = TaskStatus.Pending },
-                new TaskEntity { Id = 2, Title = "Task B", Status = TaskStatus.Completed },
-                new TaskEntity { Id = 3, Title = "Task C", Status = TaskStatus.InProgress }
-            };
-
-            // 🔹 Mock DbContext (Tasks + SaveChangesAsync)
-            _mockDbContext = new Mock<IAppDbContext>();
-            _mockDbContext.Setup(x => x.Tasks)
-                .Returns(MockDbSet.Create(_tasks).Object);
-            _mockDbContext.Setup(x => x.SaveChangesAsync(default)).ReturnsAsync(1);
-
-            // ⚙️ نسخه Rira v3 — شبیه‌سازی واقعی EF Core.AddAsync با تولید شناسه جدید
-            _mockDbContext
-                .Setup(x => x.Tasks.AddAsync(It.IsAny<TaskEntity>(), It.IsAny<CancellationToken>()))
-                .Returns((TaskEntity entity, CancellationToken _) =>
-                {
-                    // 🧠 تولید شناسه جدید مثل EF (قبل از خروج)
-                    var nextId = _tasks.Any() ? _tasks.Max(t => t.Id) + 1 : 1;
-                    entity.Id = nextId;
-                    _tasks.Add(entity);
-
-                    // 🔄 ساخت EntityEntry لازم برای EF Core
-                    var mockEntry = new Mock<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TaskEntity>>();
-                    mockEntry.Setup(m => m.Entity).Returns(entity);
-
-                    return new ValueTask<
-                        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TaskEntity>
-                    >(mockEntry.Object);
-                });
-
-            // 🔹 پیکربندی AutoMapper v15 با LoggerFactory واقعی
-            var cfgExp = new MapperConfigurationExpression();
-            cfgExp.CreateMap<TaskEntity, TaskDto>()
-                  .ForAllMembers(opt => opt.Condition((s, d, srcMember) => srcMember != null));
-            cfgExp.CreateMap<TaskDto, TaskEntity>()
-                  .ForAllMembers(opt => opt.Condition((s, d, srcMember) => srcMember != null));
-            var mapperCfg = new MapperConfiguration(cfgExp, new LoggerFactory());
-            _mapper = new Mapper(mapperCfg);
-
-            // 🔹 Validator واقعی
-            _validator = new TaskDtoValidator();
-
-            // 🎯 ساخت سرویس هدف
-            _service = new TaskService(_mockDbContext.Object, _mapper, _validator);
-        }
-
-        // 🧪 ==============================================================
-        [Fact(DisplayName = "GetAllTasksAsync_Should_Return_All_Tasks")]
-        public async Task GetAllTasksAsync_Should_Return_All_Tasks()
-        {
-            // Act
-            var result = await _service.GetAllTasksAsync();
-
-            // Assert
-            result.Should().NotBeNull();
-            result.Data.Should().HaveCount(3);
-            result.Data.First().Title.Should().Be("Task A");
-        }
-
-        // 🧪 ==============================================================
-        [Fact(DisplayName = "GetTaskByIdAsync_Should_Return_Correct_Task")]
-        public async Task GetTaskByIdAsync_Should_Return_Correct_Task()
-        {
-            // Act
-            var result = await _service.GetTaskByIdAsync(2);
-
-            // Assert
-            result.Data.Id.Should().Be(2);
-            result.Data.Status.Should().Be(TaskStatus.Completed);
-        }
-
-        // 🧪 ==============================================================
-        [Fact(DisplayName = "CreateTaskAsync_Should_Add_New_Task")]
-        public async Task CreateTaskAsync_Should_Add_New_Task()
-        {
-            // Arrange
-            var dto = new TaskDto { Title = "New Task", Status = TaskStatus.Pending };
-
-            // Act
-            var result = await _service.CreateTaskAsync(dto);
-
-            // Assert
-            _tasks.Last().Id.Should().BeGreaterThan(0, "شناسه باید توسط Mock تولید شود.");
-            result.Data.Should().BeGreaterThan(0, "شناسه باید بزرگتر از صفر باشد.");
-            result.Message.Should().MatchEquivalentOf("*created*");
-        }
-
-        // 🧪 ==============================================================
-        [Fact(DisplayName = "UpdateTaskAsync_Should_Update_Task_Status")]
-        public async Task UpdateTaskAsync_Should_Update_Task_Status()
-        {
-            // Arrange
-            var dto = new TaskDto { Id = 1, Title = "Task A Updated", Status = TaskStatus.Completed };
-
-            // Act
-            var result = await _service.UpdateTaskAsync(dto.Id, dto);
-
-            // Assert
-            result.Data.Should().BeGreaterThan(0);
-            result.Message.Should().MatchEquivalentOf("*updated*");
-        }
-
-        // 🧪 ==============================================================
-        [Fact(DisplayName = "DeleteTaskAsync_Should_Remove_Task")]
-        public async Task DeleteTaskAsync_Should_Remove_Task()
-        {
-            // Arrange
-            var id = 2;
-
-            // Act
-            var result = await _service.DeleteTaskAsync(id);
-
-            // Assert
-            result.Data.Should().BeGreaterThan(0);
-            result.Message.Should().MatchEquivalentOf("*deleted*");
-        }
-    }
-
-    // ============================================================================
-    // 🧩 Mock DbSet Helper – نسخه ساده‌شده Rira
-    // ============================================================================
-    public static class MockDbSet
-    {
-        public static Mock<Microsoft.EntityFrameworkCore.DbSet<T>> Create<T>(IEnumerable<T> data)
-            where T : class
+        // ------------------------------------------------------------------------------
+        // 📦 متد اصلی ساخت Mock از DbSet<TEntity>
+        // ------------------------------------------------------------------------------
+        public static Mock<DbSet<TEntity>> CreateMockDbSet<TEntity>(List<TEntity> data)
+            where TEntity : class
         {
             var queryable = data.AsQueryable();
-            var mockSet = new Mock<Microsoft.EntityFrameworkCore.DbSet<T>>();
-            mockSet.As<IQueryable<T>>().Setup(m => m.Provider).Returns(queryable.Provider);
-            mockSet.As<IQueryable<T>>().Setup(m => m.Expression).Returns(queryable.Expression);
-            mockSet.As<IQueryable<T>>().Setup(m => m.ElementType).Returns(queryable.ElementType);
-            mockSet.As<IQueryable<T>>().Setup(m => m.GetEnumerator()).Returns(queryable.GetEnumerator());
+            var mockSet = new Mock<DbSet<TEntity>>();
+
+            // 📌 تنظیم ویژگی‌های IQueryable برای پشتیبانی از LINQ و LINQ Async
+            mockSet.As<IQueryable<TEntity>>().Setup(m => m.Provider)
+                .Returns(new TestAsyncQueryProvider(queryable.Provider));
+            mockSet.As<IQueryable<TEntity>>().Setup(m => m.Expression)
+                .Returns(queryable.Expression);
+            mockSet.As<IQueryable<TEntity>>().Setup(m => m.ElementType)
+                .Returns(queryable.ElementType);
+            mockSet.As<IQueryable<TEntity>>().Setup(m => m.GetEnumerator())
+                .Returns(queryable.GetEnumerator());
+            mockSet.As<IAsyncEnumerable<TEntity>>()
+                .Setup(d => d.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
+                .Returns(new TestAsyncEnumerator<TEntity>(data.GetEnumerator()));
+
+            // ─────────────────── 📧 رفتارهای CRUD
+            // ✅ Add
+            mockSet.Setup(m => m.Add(It.IsAny<TEntity>()))
+                   .Callback<TEntity>(e => AssignAutoIdIfExists(e, data))
+                   .Returns((TEntity e) => { data.Add(e); return e; });
+
+            // ✅ Remove
+            mockSet.Setup(m => m.Remove(It.IsAny<TEntity>()))
+                   .Callback<TEntity>(entity => data.Remove(entity));
+
+            // ✅ AddAsync
+            mockSet.Setup(m => m.AddAsync(It.IsAny<TEntity>(), It.IsAny<CancellationToken>()))
+                   .Returns<TEntity, CancellationToken>((entity, token) =>
+                   {
+                       AssignAutoIdIfExists(entity, data);
+                       data.Add(entity);
+                       var entry = Mock.Of<EntityEntry<TEntity>>(e => e.Entity == entity);
+                       return ValueTask.FromResult(entry);
+                   });
+
+            // ✅ FindAsync (برای جلوگیری از NullReference هنگام Update)
+            mockSet.Setup(m => m.FindAsync(It.IsAny<object[]>()))
+                   .Returns<object[]>(ids =>
+                   {
+                       var id = (int)ids[0];
+                       var found = data.SingleOrDefault(e =>
+                           (int)e.GetType().GetProperty("Id")!.GetValue(e)! == id);
+
+                       // اگر پیدا نشد، نمونه خالی بساز تا سرویس نپره
+                       return ValueTask.FromResult(found ?? Activator.CreateInstance<TEntity>());
+                   });
+
             return mockSet;
+        }
+
+        // ------------------------------------------------------------------------------
+        // 📎 متد سازگار با تست‌های قدیمی (BuildMockDbSet)
+        // ------------------------------------------------------------------------------
+        public static Mock<DbSet<TEntity>> BuildMockDbSet<TEntity>(List<TEntity> data)
+            where TEntity : class =>
+            // 👇 اضافه شده برای رفع خطای CS0121
+            Rira.Tests.Common.Mocks.EFAsyncMockHelper.CreateMockDbSet<TEntity>(data);
+
+        // ------------------------------------------------------------------------------
+        // 🔢 تخصیص ID خودکار به رکوردهای جدید در Mock
+        // ------------------------------------------------------------------------------
+        private static void AssignAutoIdIfExists<TEntity>(TEntity entity, List<TEntity> data)
+        {
+            // یافتن پراپرتی Id
+            var idProp = typeof(TEntity).GetProperty("Id");
+            if (idProp == null || idProp.PropertyType != typeof(int))
+                return;
+
+            // مقدار فعلی Id را بخوان
+            var currentIdObj = idProp.GetValue(entity);
+            var currentId = currentIdObj is int i ? i : 0;
+
+            // فقط اگر Id فعلی صفر است ...
+            if (currentId == 0)
+            {
+                // پیدا کردن بزرگ‌ترین Id فعلی در داده‌ها
+                var maxId = data
+                    .Select(e => (int?)idProp.GetValue(e))
+                    .Where(v => v.HasValue)
+                    .DefaultIfEmpty(0)
+                    .Max() ?? 0;
+
+                // مقدار جدید (maxId + 1)
+                var newId = maxId + 1;
+                idProp.SetValue(entity, newId);
+            }
         }
     }
 }

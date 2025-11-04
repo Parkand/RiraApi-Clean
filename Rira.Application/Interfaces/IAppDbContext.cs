@@ -1,29 +1,24 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using System.Threading;
+using System.Threading.Tasks;
 using Rira.Domain.Entities;
 
 namespace Rira.Application.Interfaces
 {
     /// <summary>
-    /// 🧩 واسط اصلی DbContext برای جداسازی وابستگی لایه Application از Persistence.
-    /// تمام موجودیت‌های اصلی سیستم (Entities) در این Interface تعریف می‌شوند.
+    /// رابط عمومی EF Core برای کار با داده‌ها در پروژه ریرا.
+    /// نسخهٔ هماهنگ‌شده با EF Core 8 و تست‌های Mock.
     /// </summary>
     public interface IAppDbContext
     {
-        /// <summary>
-        /// مجموعه‌ی کارمندان (Employees Table)
-        /// </summary>
+        // 🟢 DbSet‌های اصلی دامنه
+        DbSet<TaskEntity> Tasks { get; set; }
         DbSet<EmployeeEntity> Employees { get; set; }
 
-        /// <summary>
-        /// مجموعه‌ی وظایف یا تسک‌ها (Tasks Table)
-        /// </summary>
-        DbSet<TaskEntity> Tasks { get; set; }
+        // ✅ متد استاندارد EF برای دسترسی جنریک به DbSet‌ها
+        DbSet<TEntity> Set<TEntity>() where TEntity : class;
 
-        /// <summary>
-        /// ثبت و ذخیره‌ی تغییرات در پایگاه داده به‌صورت ناهمزمان.
-        /// </summary>
-        /// <param name="cancellationToken">توکن لغو عملیات که در async استفاده می‌شود.</param>
-        /// <returns>تعداد رکوردهای تغییر یافته.</returns>
+        // ✅ ذخیره‌سازی تغییرات
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }
