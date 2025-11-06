@@ -116,19 +116,21 @@ namespace Rira.Api.Controllers
         }
 
         // ================================================================
-        // 🔹 حذف نرم (Soft Delete) کارمند
+        // 🔹 حذف نرم (Soft Delete) کارمند — نسخه هماهنگ با Guid
         // ================================================================
 
         /// <summary>
         /// متد HTTP DELETE برای حذف نرم (غیرفعال‌سازی) یک کارمند بر اساس شناسه.
+        /// شناسه از نوع Guid است و مستقیماً از Route دریافت می‌شود.
         /// Command نوع <see cref="EmployeeDeleteCommand"/> اجرا می‌شود.
         /// حذف نرم یعنی رکورد در پایگاه داده باقی می‌ماند ولی وضعیت آن “غیرفعال” می‌شود.
         /// </summary>
-        [HttpDelete("delete/{id:int}")]
-        public async Task<IActionResult> DeleteEmployee(int id)
+        [HttpDelete("delete/{id:guid}")]
+        public async Task<IActionResult> DeleteEmployee(Guid id)
         {
             var result = await _mediator.Send(new EmployeeDeleteCommand { Id = id });
             return StatusCode(result.StatusCode, result);
         }
+
     }
 }

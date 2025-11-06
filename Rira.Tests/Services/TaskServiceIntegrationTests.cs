@@ -9,9 +9,9 @@
 
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using Rira.Application.Features.Tasks.Validators;
 using Rira.Application.Interfaces;
 using Rira.Application.MappingProfiles;
-using Rira.Application.Validators;
 using Rira.Domain.Entities;
 using Rira.Persistence.Data;
 

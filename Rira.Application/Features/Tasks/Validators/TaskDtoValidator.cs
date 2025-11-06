@@ -4,7 +4,7 @@ using Rira.Domain.Enums;
 using System.Text.RegularExpressions;
 using TaskStatus = Rira.Domain.Enums.TaskStatus;
 
-namespace Rira.Application.Validators
+namespace Rira.Application.Features.Tasks.Validators
 {
     // 🧭 کلاس اعتبارسنجی TaskDto با FluentValidation
     // ===============================================================================
@@ -23,6 +23,11 @@ namespace Rira.Application.Validators
     // 🔹 نکته RiRaDocs:
     //     این Validator در مرحله Application اجرا می‌شود و مستقل از UI یا Handler است.
     //     خروجی خطاها در قالب RiraValidationException تجمیع می‌گردند تا تجربه‌ی کاربر سازگار باشد.
+    /// <summary>
+    /// معتبرسازی داده‌های ورودی برای فرمان ایجاد وظیفه.
+    /// بررسی نام، تاریخ سررسید و وضعیت انجام.
+    /// </summary>
+
     public class TaskDtoValidator : AbstractValidator<TaskDto>
     {
         // ============================================================

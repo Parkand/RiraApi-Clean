@@ -58,7 +58,7 @@ namespace Rira.Application.Features.Employees.Commands.CreateEmployee
                 await _context.SaveChangesAsync(cancellationToken);
 
                 // ✅ بازگرداندن نتیجه موفق به همراه شناسه ثبت‌شده
-                return ResponseModel<int>.Ok(employee.Id, "✅ کارمند جدید با موفقیت ایجاد شد.");
+                return ResponseModel<int>.Ok(employee.Id , "✅ کارمند جدید با موفقیت ایجاد شد.");
             }
             catch (Exception ex)
             {

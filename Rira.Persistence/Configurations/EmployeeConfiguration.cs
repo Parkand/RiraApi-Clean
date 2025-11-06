@@ -104,7 +104,7 @@ namespace Rira.Persistence.Configurations
                 // 🧑‍💻 مثال ۱: توسعه‌دهنده اصلی پروژه ریرا
                 new EmployeeEntity
                 {
-                    Id = 1,
+                    Id = new Guid(),
                     FirstName = "سروش",
                     LastName = "مغربی",
                     Gender = EmployeeEntity.GenderType.Male,
@@ -122,7 +122,7 @@ namespace Rira.Persistence.Configurations
                 // 👨‍🏫 مثال ۲: مدیر منابع انسانی نمونه
                 new EmployeeEntity
                 {
-                    Id = 2,
+                    Id = new Guid(),
                     FirstName = "علی",
                     LastName = "کاظمی",
                     Gender = EmployeeEntity.GenderType.Male,

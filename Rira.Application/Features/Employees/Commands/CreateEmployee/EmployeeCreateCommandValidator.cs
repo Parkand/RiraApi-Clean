@@ -42,19 +42,19 @@ namespace Rira.Application.Features.Employees.Commands.CreateEmployee
                 .EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email))
                 .WithMessage("فرمت ایمیل معتبر نیست.");
 
-            // ✅ Rule برای تاریخ تولد شمسی (BirthDatePersian)
-            // ------------------------------------------------------------
-            // بررسی فرمت الگوی yyyy/MM/dd با استفاده از Regular Expression.
-            RuleFor(x => x.BirthDatePersian)
-                .Matches(@"^\d{4}/\d{2}/\d{2}$")
-                .WithMessage("تاریخ تولد باید به‌صورت yyyy/MM/dd وارد شود.");
+            //// ✅ Rule برای تاریخ تولد شمسی (BirthDatePersian)
+            //// ------------------------------------------------------------
+            //// بررسی فرمت الگوی yyyy/MM/dd با استفاده از Regular Expression.
+            //RuleFor(x => x.BirthDatePe)
+            //    .Matches(@"^\d{4}/\d{2}/\d{2}$")
+            //    .WithMessage("تاریخ تولد باید به‌صورت yyyy/MM/dd وارد شود.");
 
-            // ✅ Rule برای سطح تحصیلات (EducationLevel)
-            // ------------------------------------------------------------
-            // مقدار Enum نباید صفر یا کمتر از آن باشد.
-            // این بررسی تضمین می‌کند که یکی از سطح‌های معتبر انتخاب شده باشد.
-            RuleFor(x => (int)x.EducationLevel)
-                .GreaterThan(0).WithMessage("سطح تحصیلات معتبر نیست.");
+            //// ✅ Rule برای سطح تحصیلات (EducationLevel)
+            //// ------------------------------------------------------------
+            //// مقدار Enum نباید صفر یا کمتر از آن باشد.
+            //// این بررسی تضمین می‌کند که یکی از سطح‌های معتبر انتخاب شده باشد.
+            //RuleFor(x => (int)x.EducationLevel)
+            //    .GreaterThan(0).WithMessage("سطح تحصیلات معتبر نیست.");
         }
 
         // ===========================================================================================
